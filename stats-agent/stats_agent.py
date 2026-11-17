@@ -2,7 +2,8 @@
 """Read-only host stats for the ops.chinmoy.site dashboard.
 
 Reports host metrics, per-container/service CPU and memory, a disk breakdown of
-$HOME, and a live inventory of containers and services. Needs no root: names and
+$HOME, a live inventory of containers and services, and cgroup v2 accounting plus
+PSI (pressure stall information) per unit and for the host. Needs no root: names and
 usage come from /proc, which also covers rootful containers via their conmon.
 """
 import hmac
@@ -256,6 +257,179 @@ def disk_breakdown(disk):
     return sorted(out, key=lambda x: -x["bytes"]), disk_state["at"]
 
 
+# ---------- cgroup v2 + PSI ----------
+# No history is kept: PSI windows (avg10/60/300) come from the kernel, and counters
+# (CPU time, throttling, IO bytes) are turned into rates against the previous poll.
+CG_ROOT = "/sys/fs/cgroup"
+PSI_RESOURCES = ("cpu", "memory", "io")
+IO_URING_WCHANS = {"io_cqring_wait", "io_wq_worker"}
+prev_cg = {}
+
+
+def read_text(path):
+    try:
+        with open(path) as f:
+            return f.read()
+    except OSError:
+        return None
+
+
+def read_flat(path):
+    """Parse 'key value' lines (memory.stat, cpu.stat, memory.events)."""
+    text = read_text(path)
+    out = {}
+    for line in (text or "").splitlines():
+        key, _, val = line.partition(" ")
+        if val.strip().isdigit():
+            out[key] = int(val)
+    return out
+
+
+def read_psi(path):
+    """Return {'some': {...}, 'full': {...}} with avg10/avg60/avg300 and total (usec), or None."""
+    text = read_text(path)
+    if not text:
+        return None
+    out = {}
+    for line in text.splitlines():
+        kind, *fields = line.split()
+        vals = dict(f.split("=", 1) for f in fields)
+        out[kind] = {k: (int(v) if k == "total" else float(v)) for k, v in vals.items()}
+    return out
+
+
+def host_pressure():
+    out = {}
+    for res in PSI_RESOURCES:
+        p = read_psi(f"/proc/pressure/{res}")
+        if p:
+            out[res] = p
+    return out or None
+
+
+def find_cgroups():
+    """Yield (kind, id, path) for each systemd service and podman container cgroup.
+
+    Containers are libpod-<cid>.scope (pods, rootful and rootless) or a quadlet's
+    *.service; descent stops at the first match so nested cgroups aren't double counted.
+    """
+    for dirpath, dirnames, _ in os.walk(CG_ROOT):
+        base = os.path.basename(dirpath)
+        if base.startswith("libpod-") and base.endswith(".scope") and "conmon" not in base:
+            dirnames[:] = []
+            yield "container", base[len("libpod-"):-len(".scope")], dirpath
+        elif base.endswith(".service") and not base.startswith("user@"):
+            dirnames[:] = []
+            yield "service", base[:-len(".service")], dirpath
+        elif base.endswith((".mount", ".socket", ".swap")) or (base.endswith(".scope") and dirpath != CG_ROOT):
+            dirnames[:] = []
+
+
+def io_bytes(path):
+    r = w = 0
+    for line in (read_text(f"{path}/io.stat") or "").splitlines():
+        for field in line.split()[1:]:
+            k, _, v = field.partition("=")
+            if k == "rbytes":
+                r += int(v)
+            elif k == "wbytes":
+                w += int(v)
+    return r, w
+
+
+def uses_io_uring(path):
+    """True when the cgroup's threads are io_uring workers or parked in io_uring waits.
+
+    Those waits are accounted as iowait, so PSI io reads near 100% even when idle.
+    """
+    for dirpath, _, files in os.walk(path):
+        if "cgroup.threads" not in files:
+            continue
+        for tid in (read_text(f"{dirpath}/cgroup.threads") or "").split()[:512]:
+            comm = (read_text(f"/proc/{tid}/comm") or "").strip()
+            if comm.startswith("iou-") or (read_text(f"/proc/{tid}/wchan") or "") in IO_URING_WCHANS:
+                return True
+    return False
+
+
+def has_payload(path):
+    """A quadlet unit runs its container in a libpod-payload-<cid> child cgroup."""
+    try:
+        return any(e.name.startswith("libpod-payload-") for e in os.scandir(path) if e.is_dir())
+    except OSError:
+        return False
+
+
+def compact_psi(p):
+    """avg10 and avg60 for some/full; None when idle so the payload stays small."""
+    if not p:
+        return None
+    out = {k: v["avg10"] for k, v in p.items()} | {k + "60": v["avg60"] for k, v in p.items()}
+    return out if any(out.values()) else None
+
+
+def collect_cgroups(names, cpus):
+    """Per-unit memory/CPU/IO/PSI straight from cgroup v2; [] if cgroup v2 is absent."""
+    global prev_cg
+    if not os.path.exists(f"{CG_ROOT}/cgroup.controllers"):
+        return []
+    now = time.monotonic()
+    rows, seen = [], {}
+    for kind, ident, path in find_cgroups():
+        name = names.get(ident, f"container {ident[:12]}") if kind == "container" else ident
+        if name in NOISE_UNITS or name.endswith("-infra"):
+            continue
+        current = read_text(f"{path}/memory.current")
+        if current is None:
+            continue
+        mstat = read_flat(f"{path}/memory.stat")
+        cstat = read_flat(f"{path}/cpu.stat")
+        events = read_flat(f"{path}/memory.events")
+        rbytes, wbytes = io_bytes(path)
+        mem_max = (read_text(f"{path}/memory.max") or "max").strip()
+        cur = {"usage": cstat.get("usage_usec", 0), "throttled": cstat.get("throttled_usec", 0),
+               "nr_throttled": cstat.get("nr_throttled", 0), "r": rbytes, "w": wbytes, "at": now}
+        seen[path] = cur
+        prev = prev_cg.get(path)
+        rates = None
+        if prev and now > prev["at"]:
+            dt = now - prev["at"]
+            rates = {
+                "intervalSec": round(dt, 1),
+                "cpuPct": round(max(0, cur["usage"] - prev["usage"]) / (dt * 1e6) / cpus * 100, 2),
+                "throttledPct": round(min(100.0, max(0, cur["throttled"] - prev["throttled"]) / (dt * 1e6) * 100), 1),
+                "throttledPeriods": max(0, cur["nr_throttled"] - prev["nr_throttled"]),
+                "readRate": max(0.0, (rbytes - prev["r"]) / dt),
+                "writeRate": max(0.0, (wbytes - prev["w"]) / dt),
+            }
+        psi = {res: read_psi(f"{path}/{res}.pressure") for res in PSI_RESOURCES}
+        row = {
+            "name": name,
+            "kind": "container" if kind == "container" or has_payload(path) else "service",
+            "memory": {
+                "current": int(current),
+                "max": None if mem_max == "max" else int(mem_max),
+                "anon": mstat.get("anon", 0),
+                "file": mstat.get("file", 0),
+                "kernel": mstat.get("kernel", mstat.get("slab", 0)),
+                "reclaimable": mstat.get("slab_reclaimable", 0) + mstat.get("inactive_file", 0),
+                "swap": int((read_text(f"{path}/memory.swap.current") or "0").strip() or 0),
+                "events": {k: events.get(k, 0) for k in ("high", "max", "oom", "oom_kill")},
+            },
+            "cpu": {"usageSec": round(cur["usage"] / 1e6, 1), "throttledSec": round(cur["throttled"] / 1e6, 1),
+                    "nrThrottled": cur["nr_throttled"]},
+            "io": {"rbytes": rbytes, "wbytes": wbytes},
+            "rates": rates,
+            "psi": {res: compact_psi(p) for res, p in psi.items()},
+        }
+        io_full = (psi["io"] or {}).get("full", {}).get("avg10", 0)
+        quiet_disk = rates is None or rates["readRate"] + rates["writeRate"] < 1 << 20
+        row["ioUring"] = io_full >= 10 and quiet_disk and uses_io_uring(path)
+        rows.append(row)
+    prev_cg = seen
+    return sorted(rows, key=lambda r: -r["memory"]["current"])
+
+
 lock = threading.Lock()
 prev_cpu = cpu_sample()
 prev_net = net_sample()
@@ -299,6 +473,7 @@ def collect():
             g["procs"] += 1
             g["ticks"] += max(0, p["ticks"] - prev_ticks.get(key, p["ticks"]))
         prev_ticks = ticks_now
+        cgroups = collect_cgroups(names, os.cpu_count() or 1)
 
     now_up = uptime_sec()
     usage = {g["name"]: g["bytes"] for g in groups.values()}
@@ -327,6 +502,8 @@ def collect():
         },
         "containers": containers,
         "services": services,
+        "pressure": host_pressure(),
+        "cgroups": cgroups,
     }
 
 

@@ -90,10 +90,19 @@ tr:last-child td{border-bottom:none}
 .drill-row .kind{color:var(--faint);font-size:10px;margin-left:6px}
 .drill-row .val{flex:0 0 auto;font-family:var(--mono);font-variant-numeric:tabular-nums}
 .drill-note{color:var(--faint);font-size:11px;margin-top:6px}
+.warn-t{color:var(--warn)}
+.bad-t{color:var(--bad)}
+.cg-host{margin-bottom:14px}
+.cg-host:last-child{margin-bottom:0}
+.cg-wrap{overflow-x:auto}
+#cgroups table td,#cgroups table th{white-space:nowrap}
+#cgroups td.name{max-width:220px;overflow:hidden;text-overflow:ellipsis}
+.chip{display:inline-block;border:1px solid var(--line);border-radius:4px;padding:0 4px;margin-left:6px;font:10px/15px var(--mono);color:var(--faint)}
 @media(max-width:800px){main{padding:12px}.grid{grid-template-columns:1fr}.wide{grid-column:auto}.cards{grid-template-columns:1fr 1fr}.hosts{grid-template-columns:1fr}.crumb,#updated{display:none}.top{padding:0 12px}.tabs{padding:0 4px}#modeltable{display:block;overflow-x:auto}}
 </style></head><body><div class="chrome"><header class="top"><div class="brand"><span class="logo"></span><h1>Ops</h1><span class="crumb">/ netcup + oracle</span></div><div class="actions"><span id="updated" class="muted">Loading…</span><span id="live" class="live muted"><i></i><span>connecting</span></span><button class="logout" id="logout">Sign out</button></div></header><nav class="tabs" aria-label="Sections"><a class="tab" href="#servers" data-tab-link="servers">Servers</a><a class="tab" href="#services" data-tab-link="services">Services<span class="tab-count" id="count-services"></span></a><a class="tab" href="#containers" data-tab-link="containers">Containers<span class="tab-count" id="count-containers"></span></a><a class="tab" href="#usage" data-tab-link="usage">Usage</a></nav></div><main>
 <section class="grid">
 <div class="panel full" data-tab="servers"><h2>VPS stats <span class="muted" style="font-weight:400;text-transform:none;letter-spacing:0">· live</span></h2><div class="hosts"><div id="host">Loading…</div><div id="oracle">Loading…</div></div></div>
+<div class="panel full" data-tab="servers"><h2>Cgroups &amp; pressure <span class="muted" style="font-weight:400;text-transform:none;letter-spacing:0">· per service and container, from cgroup v2 + PSI</span></h2><div id="cgroups"><span class="muted">Warming up…</span></div></div>
 <div class="panel full" data-tab="services"><h2>Public services <span class="muted" style="font-weight:400;text-transform:none;letter-spacing:0">· from Traefik routes, HTTPS probe</span></h2><div id="services" class="cards"></div></div>
 <div class="panel full" data-tab="containers"><h2>Containers &amp; services <span class="muted" style="font-weight:400;text-transform:none;letter-spacing:0">· auto-discovered on both servers</span></h2><div id="containers" class="inventory"></div></div>
 <div class="panel full" data-tab="usage"><h2>ccusage · last 30 days by model</h2>
@@ -223,8 +232,72 @@ function drillRows(rows,value){
   return rows.map(r=>`<div class="drill-row"><span class="name" title="${esc(r.name)}">${esc(r.name)}${r.kind&&r.kind!=='process'?`<span class="kind">${esc(r.kind)}</span>`:''}</span><span class="val">${esc(value(r))}</span></div>`).join('');
 }
 
-function drillMeter(key,label,value,pct,body){
-  return `<details class="drill" data-drill="${esc(key)}"${openDrills.has(key)?' open':''}><summary><div class="row"><span class="muted label"><span class="caret">▸</span>${esc(label)}</span><span class="v">${esc(value)}</span></div><div class="${meterClass(pct||0)}"><i style="width:${Math.min(100,pct||0)}%"></i></div></summary><div class="drill-body">${body}</div></details>`;
+function drillMeter(key,label,value,pct,body,cls){
+  return `<details class="drill" data-drill="${esc(key)}"${openDrills.has(key)?' open':''}><summary><div class="row"><span class="muted label"><span class="caret">▸</span>${esc(label)}</span><span class="v">${esc(value)}</span></div><div class="${cls||meterClass(pct||0)}"><i style="width:${Math.min(100,pct||0)}%"></i></div></summary><div class="drill-body">${body}</div></details>`;
+}
+
+const pct1=v=>v==null?'—':Number(v).toFixed(v>=10?0:1)+'%';
+const rate=v=>v==null?'—':v<1?'0':bytes(v)+'/s';
+function psiClass(v){return v>=40?'meter hot':v>=10?'meter warn':'meter';}
+
+// Host PSI, with IO pressure that only io_uring idle waits explain called out separately.
+function pressureSummary(detail){
+  const p=detail?.pressure, cgs=detail?.cgroups||[];
+  if(!p) return null;
+  const uring=cgs.filter(c=>c.ioUring).map(c=>c.name);
+  const otherIo=Math.max(0,...cgs.filter(c=>!c.ioUring).map(c=>c.psi?.io?.some??0));
+  const ioSome=p.io?.some?.avg10??0;
+  const ioExplained=uring.length>0&&ioSome>=10&&otherIo<Math.min(20,ioSome/3);
+  const effIo=ioExplained?otherIo:ioSome;
+  const worst=Math.max(p.cpu?.some?.avg10??0,p.memory?.some?.avg10??0,effIo);
+  return {p,uring,ioExplained,effIo,worst};
+}
+
+function pressureBody(s,cgs){
+  const row=(label,r,extra='')=>{
+    const some=r?.some, full=r?.full;
+    return `<div class="drill-row"><span class="name">${esc(label)}${extra}</span><span class="val">some ${pct1(some?.avg10)} · full ${full?pct1(full.avg10):'—'} <span class="muted">(60s ${pct1(some?.avg60)})</span></span></div>`;
+  };
+  const top=cgs.map(c=>({c,v:Math.max(c.psi?.cpu?.some??0,c.psi?.memory?.some??0,c.ioUring?0:(c.psi?.io?.some??0))})).filter(x=>x.v>=1).sort((a,b)=>b.v-a.v).slice(0,5);
+  return row('CPU',s.p.cpu)+row('Memory',s.p.memory)+row('IO',s.p.io,s.ioExplained?'<span class="chip">io_uring</span>':'')
+    +(s.ioExplained?`<div class="drill-note">IO pressure comes from ${esc(s.uring.join(', '))}: io_uring threads waiting idle are counted as IO stall. Ignoring it, the most IO-stalled cgroup is at ${pct1(s.effIo)}.</div>`:'')
+    +(top.length?`<div class="drill-note" style="margin-top:8px">Most stalled cgroups (avg10): ${top.map(x=>esc(x.c.name)+' '+pct1(x.v)).join(', ')}</div>`:'<div class="drill-note">Percent of the last 10 s that some (or all) tasks waited on the resource.</div>');
+}
+
+function memDrill(detail,top){
+  const cgs=detail?.cgroups;
+  if(!cgs?.length) return drillRows(top.memory,r=>bytes(r.bytes))+'<div class="drill-note">Resident memory per container or service. Shared pages count more than once, so this can exceed the total.</div>';
+  const rows=cgs.slice(0,10).map(c=>{
+    const m=c.memory, near=m.max&&m.current/m.max>=0.9, oom=m.events.oom_kill>0;
+    const flag=oom?`<span class="chip bad-t">${m.events.oom_kill} OOM</span>`:near?'<span class="chip warn-t">at limit</span>':'';
+    return `<div class="drill-row" title="anon ${bytes(m.anon)} · cache ${bytes(m.file)} · kernel ${bytes(m.kernel)}${m.max?' · limit '+bytes(m.max):''}"><span class="name">${esc(c.name)}<span class="kind">${esc(c.kind)}</span>${flag}</span><span class="val">${bytes(m.current)} <span class="muted">· ${bytes(m.anon)} anon</span></span></div>`;
+  }).join('');
+  return rows+'<div class="drill-note">cgroup memory.current: process memory (anon) plus page cache and kernel memory charged to the unit. Cache and reclaimable slab are freed under pressure. Hover a row for the split.</div>';
+}
+
+function cgroupTable(label,a){
+  const cgs=a?.host?.cgroups;
+  if(!a) return '';
+  if(!a.ok) return `<div class="cg-host"><div class="host-title">${esc(label)}</div><span class="error" style="font-size:12px">Stats agent unreachable</span></div>`;
+  if(!cgs) return `<div class="cg-host"><div class="host-title">${esc(label)}</div><span class="muted" style="font-size:12px">This host's stats agent predates cgroup reporting. Deploy the new stats_agent.py to enable it.</span></div>`;
+  const psiCell=(v,skip)=>{if(v==null||skip) return `<td class="num muted">${skip?'n/a':'0'}</td>`;const c=v>=40?'bad-t':v>=10?'warn-t':'';return `<td class="num ${c}">${pct1(v)}</td>`;};
+  const body=cgs.filter(c=>c.memory.current>=1<<20||(c.rates?.cpuPct??0)>0.05).map(c=>{
+    const m=c.memory,r=c.rates||{};
+    const thr=r.throttledPct??0, limited=m.max&&m.current/m.max>=0.9;
+    const events=[m.events.oom_kill?`<span class="bad-t">${m.events.oom_kill} OOM kill</span>`:'',m.events.max?`<span class="${limited?'warn-t':'muted'}">${fmt(m.events.max)} at max</span>`:'',m.events.high?`<span class="muted">${fmt(m.events.high)} over high</span>`:''].filter(Boolean).join(' · ')||'<span class="muted">—</span>';
+    return `<tr><td class="name" title="${esc(c.name)}">${esc(c.name)}<span class="chip">${esc(c.kind)}</span>${c.ioUring?'<span class="chip">io_uring</span>':''}</td>
+      <td class="num">${bytes(m.current)}${m.max?`<span class="muted"> / ${bytes(m.max)}</span>`:''}</td><td class="num">${bytes(m.anon)}</td><td class="num muted">${bytes(m.file+m.kernel)}</td>
+      <td class="num">${r.cpuPct==null?'—':r.cpuPct.toFixed(1)+'%'}</td><td class="num ${thr>=25?'bad-t':thr>=5?'warn-t':''}">${r.throttledPct==null?'—':pct1(thr)}</td>
+      <td class="num">${rate(r.readRate)} / ${rate(r.writeRate)}</td>
+      ${psiCell(c.psi?.cpu?.some)}${psiCell(c.psi?.memory?.some)}${psiCell(c.psi?.io?.some,c.ioUring)}<td>${events}</td></tr>`;
+  }).join('');
+  const s=pressureSummary(a.host);
+  const hostLine=s?`<span class="muted" style="font-size:12px;margin-left:8px">host PSI some: cpu ${pct1(s.p.cpu?.some?.avg10)} · mem ${pct1(s.p.memory?.some?.avg10)} · io ${pct1(s.p.io?.some?.avg10)}${s.ioExplained?' (io_uring, effective '+pct1(s.effIo)+')':''}</span>`:'';
+  return `<div class="cg-host"><div style="margin-bottom:6px"><span class="host-title">${esc(label)}</span>${hostLine}</div><div class="cg-wrap"><table><thead><tr><th>Unit</th><th class="num">Memory</th><th class="num">Anon</th><th class="num">Cache+kernel</th><th class="num">CPU</th><th class="num">Throttled</th><th class="num">IO read / write</th><th class="num">PSI cpu</th><th class="num">PSI mem</th><th class="num">PSI io</th><th>Memory events</th></tr></thead><tbody>${body}</tbody></table></div></div>`;
+}
+
+function renderCgroups(){
+  document.querySelector('#cgroups').innerHTML=(cgroupTable('netcup',agents.netcup)+cgroupTable('oracle',agents.oracle))||'<span class="muted">Warming up…</span>';
 }
 
 function renderHost(h,label,detail){
@@ -240,8 +313,9 @@ function renderHost(h,label,detail){
     <div class="host-title"><i class="dot up"></i>${esc(label)}</div>
     <div class="muted" style="font-size:12px;margin:2px 0 10px">${esc(h.hostname)} · up ${esc(h.uptime)} · ${esc(String(h.cpus))} cores</div>
     ${drillMeter(label+':cpu','CPU',cpu==null?'—':cpu.toFixed(1)+'%',cpu,detail?drillRows(top.cpu,r=>r.pct.toFixed(1)+'%')+'<div class="drill-note">Share of the whole machine since the last refresh</div>':unavailable)}
-    ${drillMeter(label+':mem','Memory',`${mem.usedLabel} / ${mem.totalLabel} · ${mem.pct??'—'}%`,mem.pct,detail?drillRows(top.memory,r=>bytes(r.bytes))+'<div class="drill-note">Resident memory per container or service. Shared pages count more than once, so this can exceed the total.</div>':unavailable)}
+    ${drillMeter(label+':mem','Memory',`${mem.usedLabel} / ${mem.totalLabel} · ${mem.pct??'—'}%`,mem.pct,detail?memDrill(detail,top):unavailable)}
     ${drillMeter(label+':disk',`Disk ${disk.mount||'/'}`,`${disk.usedLabel} / ${disk.totalLabel} · ${disk.pct??'—'}%`,disk.pct,detail?drillRows(top.disk,r=>bytes(r.bytes))+`<div class="drill-note">${top.diskAt?'Scanned '+esc(new Date(top.diskAt*1000).toLocaleTimeString())+', refreshed every 30 min':'First scan in progress…'}</div>`:unavailable)}
+    ${(()=>{const s=pressureSummary(detail);return s?drillMeter(label+':psi','Pressure (PSI)',`worst ${pct1(s.worst)}${s.ioExplained?' · io_uring ignored':''}`,s.worst,pressureBody(s,detail.cgroups||[]),psiClass(s.worst)):'';})()}
     <div class="stat-grid" style="margin-top:8px">
       <div class="stat-kv"><span class="k">Load 1 / 5 / 15</span><span class="v">${Number(load.m1||0).toFixed(2)} · ${Number(load.m5||0).toFixed(2)} · ${Number(load.m15||0).toFixed(2)}</span></div>
       <div class="stat-kv"><span class="k">Mem available</span><span class="v">${esc(mem.availableLabel||'—')}</span></div>
@@ -263,6 +337,7 @@ function renderOracle(o){
 function renderHosts(){
   document.querySelector('#host').innerHTML=lastHost?renderHost(lastHost,'netcup',agents.netcup?.ok?agents.netcup.host:null):'<span class="muted">Warming up…</span>';
   document.querySelector('#oracle').innerHTML=renderOracle(agents.oracle);
+  renderCgroups();
 }
 
 function renderServices(services){
