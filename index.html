@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Hermes Ops</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"><style>
+:root{color-scheme:dark;--bg:#0a0a0b;--panel:#101012;--panel-2:#151518;--line:#232327;--line-soft:#1b1b1f;--text:#ededef;--muted:#8d8d94;--faint:#62626a;--good:#3fb97f;--bad:#ef6b6b;--warn:#d9a441;--accent:#e4e4e7;--gold:var(--accent);--mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);font:13px/1.5 Inter,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--text);-webkit-font-smoothing:antialiased}
+.chrome{position:sticky;top:0;z-index:20;background:#0a0a0bd9;backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+.top{display:flex;justify-content:space-between;align-items:center;gap:12px;height:46px;padding:0 20px}
+.tabs{display:flex;gap:2px;padding:0 12px;overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{display:inline-flex;align-items:center;gap:6px;padding:7px 8px 9px;color:var(--muted);text-decoration:none;font-weight:500;white-space:nowrap;border-bottom:2px solid transparent;margin-bottom:-1px;transition:color .12s}
+.tab:hover{color:var(--text)}
+.tab[aria-current=page]{color:var(--text);border-bottom-color:var(--accent)}
+.tab:focus-visible{outline:1px solid var(--muted);outline-offset:-2px;border-radius:4px}
+.tab-count{font:11px var(--mono);color:var(--faint)}
+.tab-count.bad{color:var(--bad)}
+.panel[data-tab]{display:none}
+.panel[data-tab].active{display:block}
+.brand{display:flex;align-items:center;gap:10px;min-width:0}
+.brand h1{font-size:13px;font-weight:600;margin:0}
+.logo{width:16px;height:16px;border-radius:4px;background:var(--accent);flex:0 0 auto}
+.crumb{color:var(--faint);white-space:nowrap}
+.actions{display:flex;gap:12px;align-items:center;font-size:12px;white-space:nowrap}
+main{max-width:1180px;margin:auto;padding:20px}
+.muted{color:var(--muted)}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.panel{min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.wide{grid-column:span 2}
+.full{grid-column:1/-1}
+.panel>h2{font-size:12px;font-weight:500;margin:-14px -16px 14px;padding:10px 16px;border-bottom:1px solid var(--line)}
+.panel>h2 .muted{color:var(--faint)}
+.hosts{display:grid;grid-template-columns:1fr 1fr;gap:32px}
+.host-title{font-size:13px;font-weight:600}
+.inventory{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:6px 32px;align-items:start}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px}
+.service{padding:10px 12px;border:1px solid var(--line-soft);border-radius:8px;background:var(--panel-2);transition:border-color .12s}
+.service:hover{border-color:#34343a}
+.service .muted{font-size:12px;margin-top:2px}
+.row{display:flex;justify-content:space-between;gap:10px}
+.dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--faint);margin-right:8px;vertical-align:2px}
+.up{background:var(--good)}
+.down{background:var(--bad)}
+.live{display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border:1px solid var(--line);border-radius:99px}
+.live i{width:6px;height:6px;border-radius:50%;background:var(--faint)}
+.live.on i{background:var(--good)}
+.metric{font:500 22px/1.3 var(--mono);letter-spacing:-.02em}
+.pill{border:1px solid var(--line);border-radius:5px;padding:0 6px;color:var(--muted);font:11px/18px var(--mono)}
+.bars{height:120px;display:flex;align-items:end;gap:4px;border-bottom:1px solid var(--line);padding:10px 0;position:relative}
+.bar{flex:1;min-width:6px;display:flex;flex-direction:column-reverse;border-radius:3px 3px 0 0;overflow:hidden;cursor:pointer;min-height:3px;background:var(--line-soft)}
+.bar:hover{outline:1px solid #ffffff40;outline-offset:1px}
+.seg{width:100%;min-height:0}
+.legend{display:flex;justify-content:space-between;margin-top:8px;font-size:11px}
+.swatches{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:10px}
+.swatch{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--muted)}
+.swatch i{width:8px;height:8px;border-radius:2px;display:inline-block}
+.tip{position:fixed;z-index:50;pointer-events:none;background:var(--panel-2);border:1px solid #34343a;border-radius:8px;padding:10px 12px;min-width:180px;max-width:280px;box-shadow:0 12px 32px #0009;font-size:12px;opacity:0;transform:translateY(4px);transition:opacity .12s,transform .12s}
+.tip.show{opacity:1;transform:none}
+.tip .tip-date{font-weight:600;margin-bottom:4px}
+.tip .tip-total{color:var(--muted);margin-bottom:8px;font-family:var(--mono)}
+.tip .tip-row{display:flex;justify-content:space-between;gap:12px;padding:2px 0;font-family:var(--mono)}
+.tip .tip-row span:first-child{display:flex;align-items:center;gap:6px;color:var(--muted);min-width:0}
+.tip .tip-row span:first-child b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:400;color:var(--text)}
+.tip .tip-dot{width:7px;height:7px;border-radius:2px;flex:0 0 auto}
+.error{color:var(--bad)}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;color:var(--faint);font-weight:500;font-size:11px;padding:6px 8px;border-bottom:1px solid var(--line)}
+td{padding:6px 8px;border-bottom:1px solid var(--line-soft)}
+tbody tr:hover td{background:var(--panel-2)}
+tr:last-child td{border-bottom:none}
+.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
+.logout{background:none;border:1px solid var(--line);border-radius:6px;color:var(--muted);font:inherit;padding:3px 10px;cursor:pointer;transition:color .12s,border-color .12s}
+.logout:hover{color:var(--text);border-color:#34343a}
+.meter{height:4px;background:var(--line);border-radius:99px;overflow:hidden;margin:6px 0 12px}
+.meter>i{display:block;height:100%;border-radius:99px;background:var(--accent);transition:width .4s ease}
+.meter.warn>i{background:var(--warn)}
+.meter.hot>i{background:var(--bad)}
+.stat-grid{display:grid;gap:0;border-top:1px solid var(--line-soft);padding-top:6px}
+.stat-kv{display:flex;justify-content:space-between;gap:10px;padding:3px 0;font-size:12px}
+.stat-kv .k{color:var(--muted)}
+.v,.stat-kv .v{font-family:var(--mono);font-size:12px;font-variant-numeric:tabular-nums;text-align:right}
+.drill summary{list-style:none;cursor:pointer;border-radius:4px}
+.drill summary::-webkit-details-marker{display:none}
+.drill summary .caret{display:inline-block;width:12px;color:var(--faint);font-size:10px;transition:transform .12s}
+.drill[open] summary .caret{transform:rotate(90deg)}
+.drill summary:hover .label,.drill summary:hover .caret{color:var(--text)}
+.drill summary:focus-visible{outline:1px solid var(--muted);outline-offset:2px}
+.drill-body{margin:-4px 0 14px;padding:6px 10px;background:var(--panel-2);border:1px solid var(--line-soft);border-radius:8px}
+.drill-row{display:flex;justify-content:space-between;gap:10px;padding:3px 0;font-size:12px}
+.drill-row .name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.drill-row .kind{color:var(--faint);font-size:10px;margin-left:6px}
+.drill-row .val{flex:0 0 auto;font-family:var(--mono);font-variant-numeric:tabular-nums}
+.drill-note{color:var(--faint);font-size:11px;margin-top:6px}
+@media(max-width:800px){main{padding:12px}.grid{grid-template-columns:1fr}.wide{grid-column:auto}.cards{grid-template-columns:1fr 1fr}.hosts{grid-template-columns:1fr}.crumb,#updated{display:none}.top{padding:0 12px}.tabs{padding:0 4px}#modeltable{display:block;overflow-x:auto}}
+</style></head><body><div class="chrome"><header class="top"><div class="brand"><span class="logo"></span><h1>Ops</h1><span class="crumb">/ netcup + oracle</span></div><div class="actions"><span id="updated" class="muted">Loading…</span><span id="live" class="live muted"><i></i><span>connecting</span></span><button class="logout" id="logout">Sign out</button></div></header><nav class="tabs" aria-label="Sections"><a class="tab" href="#servers" data-tab-link="servers">Servers</a><a class="tab" href="#services" data-tab-link="services">Services<span class="tab-count" id="count-services"></span></a><a class="tab" href="#containers" data-tab-link="containers">Containers<span class="tab-count" id="count-containers"></span></a><a class="tab" href="#usage" data-tab-link="usage">Usage</a></nav></div><main>
+<section class="grid">
+<div class="panel full" data-tab="servers"><h2>VPS stats <span class="muted" style="font-weight:400;text-transform:none;letter-spacing:0">· live</span></h2><div class="hosts"><div id="host">Loading…</div><div id="oracle">Loading…</div></div></div>
+<div class="panel full" data-tab="services"><h2>Public services <span class="muted" style="font-weight:400;text-transform:none;letter-spacing:0">· from Traefik routes, HTTPS probe</span></h2><div id="services" class="cards"></div></div>
+<div class="panel full" data-tab="containers"><h2>Containers &amp; services <span class="muted" style="font-weight:400;text-transform:none;letter-spacing:0">· auto-discovered on both servers</span></h2><div id="containers" class="inventory"></div></div>
+<div class="panel full" data-tab="usage"><h2>ccusage · last 30 days by model</h2>
+<div style="display:flex;gap:26px;flex-wrap:wrap;margin-bottom:12px"><div><div class="muted" style="font-size:11px">ALL-TIME COST</div><div id="cost" class="metric">—</div></div><div><div class="muted" style="font-size:11px">TODAY</div><div id="today" class="metric">—</div></div><div><div class="muted" style="font-size:11px">TOKENS (30D)</div><div id="tokens" class="metric" style="font-size:19px;margin-top:6px">—</div></div></div>
+<table id="modeltable"><thead><tr><th>Model</th><th class="num">Cost</th><th class="num">Input</th><th class="num">Output</th><th class="num">Cache read</th></tr></thead><tbody></tbody></table>
+<div id="chartwrap" style="margin-top:16px"><h2 style="font-size:13px">Daily cost · last 14 days <span class="muted" style="font-weight:400">· hover for model split</span></h2><div id="chart" class="bars"></div><div id="swatches" class="swatches"></div><div class="legend muted"><span>older</span><span>today</span></div></div>
+</div>
+</section></main>
+<div id="tip" class="tip" role="tooltip"></div>
+<script>
+const PALETTE=['#f4bd62','#8667ed','#42d392','#5b9dff','#ff6b7a','#47d6d0','#f08bd6','#c4d35a','#ff9f43','#7aa2ff'];
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt=n=>Number(n||0).toLocaleString(undefined,{maximumFractionDigits:0});
+const usd=n=>'$'+Number(n||0).toFixed(2);
+const tip=document.getElementById('tip');
+const liveEl=document.getElementById('live');
+let colorMap={};
+let lastUsageKey='';
+let es=null;
+let pollTimer=null;
+
+function modelColor(name){
+  if(!colorMap[name]){
+    const i=Object.keys(colorMap).length;
+    colorMap[name]=PALETTE[i%PALETTE.length];
+  }
+  return colorMap[name];
+}
+
+function setLive(on, label){
+  liveEl.classList.toggle('on', !!on);
+  liveEl.querySelector('span').textContent=label;
+}
+
+document.getElementById('logout').onclick=async()=>{
+  if(es){try{es.close();}catch{}}
+  await fetch('/api/logout',{method:'POST'});
+  location.reload();
+};
+function unauthorized(){location.reload();}
+
+function hideTip(){tip.classList.remove('show');}
+function showTip(day,evt){
+  const models=(day.models||[]).filter(m=>Number(m.cost)>0).slice(0,8);
+  const rows=models.length
+    ? models.map(m=>`<div class="tip-row"><span><i class="tip-dot" style="background:${modelColor(m.model)}"></i><b>${esc(m.model)}</b></span><span>${usd(m.cost)}</span></div>`).join('')
+    : `<div class="muted">No model split</div>`;
+  tip.innerHTML=`<div class="tip-date">${esc(day.period)}</div><div class="tip-total">Total ${usd(day.cost)}</div>${rows}`;
+  tip.classList.add('show');
+  const pad=12, tw=tip.offsetWidth, th=tip.offsetHeight;
+  let x=evt.clientX+14, y=evt.clientY-th-10;
+  if(x+tw>window.innerWidth-pad) x=evt.clientX-tw-14;
+  if(y<pad) y=evt.clientY+14;
+  tip.style.left=x+'px';
+  tip.style.top=y+'px';
+}
+
+function renderChart(days){
+  const costs=days.map(x=>Number(x.cost||0));
+  const max=Math.max(...costs,0.01);
+  const chart=document.querySelector('#chart');
+  if(!costs.length){chart.innerHTML='<span class="muted">No usage data</span>';document.querySelector('#swatches').innerHTML='';return;}
+
+  const totals={};
+  for(const day of days) for(const m of day.models||[]) totals[m.model]=(totals[m.model]||0)+Number(m.cost||0);
+  colorMap={};
+  Object.entries(totals).sort((a,b)=>b[1]-a[1]).forEach(([name])=>modelColor(name));
+
+  chart.innerHTML=days.map(day=>{
+    const segs=(day.models||[]).filter(m=>Number(m.cost)>0);
+    const total=Number(day.cost||0)||segs.reduce((a,b)=>a+Number(b.cost||0),0);
+    let html='';
+    if(!segs.length){
+      html=`<div class="seg" style="flex:1 0 0;background:var(--accent)"></div>`;
+    } else {
+      html=segs.map(m=>{
+        const share=Math.max(Number(m.cost)||0, 0.000001);
+        return `<div class="seg" style="flex:${share} 0 0;background:${modelColor(m.model)}"></div>`;
+      }).join('');
+    }
+    return `<div class="bar" style="height:${Math.max(3,total/max*100)}%">${html}</div>`;
+  }).join('');
+
+  [...chart.children].forEach((el,i)=>{
+    const day=days[i];
+    el.addEventListener('mouseenter',e=>showTip(day,e));
+    el.addEventListener('mousemove',e=>showTip(day,e));
+    el.addEventListener('mouseleave',hideTip);
+  });
+
+  const top=Object.entries(totals).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  document.querySelector('#swatches').innerHTML=top.map(([name])=>`<span class="swatch"><i style="background:${modelColor(name)}"></i>${esc(name)}</span>`).join('');
+}
+
+function meterClass(pct){
+  if(pct>=90) return 'meter hot';
+  if(pct>=75) return 'meter warn';
+  return 'meter';
+}
+
+const openDrills=new Set();
+document.addEventListener('toggle',e=>{
+  const key=e.target?.dataset?.drill;
+  if(!key) return;
+  if(e.target.open) openDrills.add(key); else openDrills.delete(key);
+},true);
+
+let lastHost=null;
+let agents={};
+
+function bytes(n){
+  const u=['B','KiB','MiB','GiB','TiB'];
+  let v=Number(n)||0,i=0;
+  while(v>=1024&&i<u.length-1){v/=1024;i++;}
+  return `${v.toFixed(v>=10||i===0?0:1)} ${u[i]}`;
+}
+
+function shortAge(sec){
+  const s=Math.floor(Number(sec)||0);
+  if(s>=86400) return Math.floor(s/86400)+'d';
+  if(s>=3600) return Math.floor(s/3600)+'h';
+  return Math.max(1,Math.floor(s/60))+'m';
+}
+
+function drillRows(rows,value){
+  if(!rows||!rows.length) return '<span class="muted" style="font-size:12px">No data yet</span>';
+  return rows.map(r=>`<div class="drill-row"><span class="name" title="${esc(r.name)}">${esc(r.name)}${r.kind&&r.kind!=='process'?`<span class="kind">${esc(r.kind)}</span>`:''}</span><span class="val">${esc(value(r))}</span></div>`).join('');
+}
+
+function drillMeter(key,label,value,pct,body){
+  return `<details class="drill" data-drill="${esc(key)}"${openDrills.has(key)?' open':''}><summary><div class="row"><span class="muted label"><span class="caret">▸</span>${esc(label)}</span><span class="v">${esc(value)}</span></div><div class="${meterClass(pct||0)}"><i style="width:${Math.min(100,pct||0)}%"></i></div></summary><div class="drill-body">${body}</div></details>`;
+}
+
+function renderHost(h,label,detail){
+  if(!h) return '<span class="muted">Warming up…</span>';
+  const cpu=h.cpu?.pct;
+  const mem=h.mem||{};
+  const disk=h.disk||{};
+  const load=h.load||{};
+  const net=h.net;
+  const top=detail?.top||{};
+  const unavailable='<span class="muted" style="font-size:12px">Breakdown unavailable: stats agent not responding</span>';
+  return `
+    <div class="host-title"><i class="dot up"></i>${esc(label)}</div>
+    <div class="muted" style="font-size:12px;margin:2px 0 10px">${esc(h.hostname)} · up ${esc(h.uptime)} · ${esc(String(h.cpus))} cores</div>
+    ${drillMeter(label+':cpu','CPU',cpu==null?'—':cpu.toFixed(1)+'%',cpu,detail?drillRows(top.cpu,r=>r.pct.toFixed(1)+'%')+'<div class="drill-note">Share of the whole machine since the last refresh</div>':unavailable)}
+    ${drillMeter(label+':mem','Memory',`${mem.usedLabel} / ${mem.totalLabel} · ${mem.pct??'—'}%`,mem.pct,detail?drillRows(top.memory,r=>bytes(r.bytes))+'<div class="drill-note">Resident memory per container or service. Shared pages count more than once, so this can exceed the total.</div>':unavailable)}
+    ${drillMeter(label+':disk',`Disk ${disk.mount||'/'}`,`${disk.usedLabel} / ${disk.totalLabel} · ${disk.pct??'—'}%`,disk.pct,detail?drillRows(top.disk,r=>bytes(r.bytes))+`<div class="drill-note">${top.diskAt?'Scanned '+esc(new Date(top.diskAt*1000).toLocaleTimeString())+', refreshed every 30 min':'First scan in progress…'}</div>`:unavailable)}
+    <div class="stat-grid" style="margin-top:8px">
+      <div class="stat-kv"><span class="k">Load 1 / 5 / 15</span><span class="v">${Number(load.m1||0).toFixed(2)} · ${Number(load.m5||0).toFixed(2)} · ${Number(load.m15||0).toFixed(2)}</span></div>
+      <div class="stat-kv"><span class="k">Mem available</span><span class="v">${esc(mem.availableLabel||'—')}</span></div>
+      <div class="stat-kv"><span class="k">Disk free</span><span class="v">${esc(disk.availableLabel||'—')}</span></div>
+      ${net?`<div class="stat-kv"><span class="k">Net ${esc(net.iface)} ↓ / ↑</span><span class="v">${esc(net.rxRateLabel||'—')} / ${esc(net.txRateLabel||'—')}</span></div>
+      <div class="stat-kv"><span class="k">Net total ↓ / ↑</span><span class="v">${esc(net.rxLabel)} / ${esc(net.txLabel)}</span></div>`:''}
+    </div>`;
+}
+
+function renderOracle(o){
+  if(!o) return '<span class="muted">Warming up…</span>';
+  if(o.ok) return renderHost(o.host,'oracle',o.host);
+  const seen=o.lastSeen?new Date(o.lastSeen).toLocaleString():'not since dashboard start';
+  return `<div class="row"><span class="host-title"><i class="dot down"></i>oracle</span><span class="pill">UNREACHABLE</span></div>
+    <div class="muted" style="font-size:12px;margin-top:6px">Last seen: ${esc(seen)}</div>
+    <div class="error" style="font-size:12px;margin-top:4px">${esc(o.error)}</div>`;
+}
+
+function renderHosts(){
+  document.querySelector('#host').innerHTML=lastHost?renderHost(lastHost,'netcup',agents.netcup?.ok?agents.netcup.host:null):'<span class="muted">Warming up…</span>';
+  document.querySelector('#oracle').innerHTML=renderOracle(agents.oracle);
+}
+
+function renderServices(services){
+  setTabCount('services',(services||[]).filter(x=>x.ok).length,(services||[]).length);
+  document.querySelector('#services').innerHTML=(services||[]).map(x=>`<div class="service"><div class="row"><span><i class="dot ${x.ok?'up':'down'}"></i>${esc(x.name)}</span><span class="pill">${x.ok?esc(x.status):'DOWN'}</span></div><div class="muted">${x.ok?'Operational':'Unreachable'} · ${x.latency} ms</div></div>`).join('')||'<span class="muted">Warming up…</span>';
+}
+
+function inventoryGroup(title,items){
+  const rows=items.map(x=>{
+    const ok=x.state==='running'&&!x.failed;
+    const parts=[x.state];
+    if(x.uptimeSec!=null) parts.push(shortAge(x.uptimeSec));
+    if(x.bytes) parts.push(bytes(x.bytes));
+    return `<div class="row" style="padding:4px 0"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><i class="dot ${ok?'up':'down'}"></i>${esc(x.name)}</span><span class="muted" style="flex:0 0 auto;font-size:12px">${esc(parts.join(' · '))}</span></div>`;
+  }).join('');
+  return `<div><div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;margin:10px 0 4px">${esc(title)}</div>${rows}</div>`;
+}
+
+function renderInventory(){
+  const blocks=[];
+  for(const id of ['netcup','oracle']){
+    const a=agents[id];
+    if(!a) continue;
+    if(!a.ok){blocks.push(`<div><div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;margin:10px 0 4px">${id}</div><span class="error" style="font-size:12px">Stats agent unreachable: ${esc(a.error)}</span></div>`);continue;}
+    const scopes={};
+    for(const c of a.host.containers||[]) (scopes[`${id} · ${c.scope} containers`]??=[]).push(c);
+    for(const u of a.host.services||[]) (scopes[`${id} · ${u.scope} services`]??=[]).push(u);
+    for(const [title,items] of Object.entries(scopes)) blocks.push(inventoryGroup(title,items));
+  }
+  const all=Object.values(agents).flatMap(a=>a.ok?[...(a.host.containers||[]),...(a.host.services||[])]:[]);
+  setTabCount('containers',all.filter(x=>x.state==='running'&&!x.failed).length,all.length,Object.values(agents).some(a=>!a.ok));
+  document.querySelector('#containers').innerHTML=blocks.join('')||'<span class="muted">Warming up…</span>';
+}
+
+function renderUsage(u){
+  if(!u || u.warming){
+    document.querySelector('#cost').textContent='…';
+    document.querySelector('#today').textContent='…';
+    document.querySelector('#tokens').textContent='loading ccusage';
+    return;
+  }
+  if(u.error){
+    document.querySelector('#cost').textContent='—';
+    document.querySelector('#tokens').textContent='ccusage error';
+    document.querySelector('#tokens').title=u.error;
+    document.querySelector('#chart').innerHTML='';
+    document.querySelector('#swatches').innerHTML='';
+    return;
+  }
+  const key=JSON.stringify({t:u.totalCost,d:(u.days||[]).map(x=>[x.period,x.cost]),m:(u.models||[]).map(x=>[x.model,x.cost])});
+  if(key===lastUsageKey) return; // skip expensive chart redraw if unchanged
+  lastUsageKey=key;
+  const days=(u.days||[]).slice(-14);
+  document.querySelector('#cost').textContent=usd(u.totalCost);
+  document.querySelector('#today').textContent=u.todayRow?usd(u.todayRow.cost):'$0.00';
+  document.querySelector('#tokens').textContent=(u.days||[]).reduce((a,b)=>a+b.in+b.out,0).toLocaleString()+' in/out';
+  document.querySelector('#modeltable tbody').innerHTML=(u.models||[]).map(m=>`<tr><td>${esc(m.model)}</td><td class="num">${usd(m.cost)}</td><td class="num">${fmt(m.in)}</td><td class="num">${fmt(m.out)}</td><td class="num">${fmt(m.cacheRead)}</td></tr>`).join('')||'<tr><td colspan="5" class="muted">No model data</td></tr>';
+  renderChart(days);
+}
+
+function applySnapshot(d){
+  document.querySelector('#updated').textContent='Updated '+new Date(d.at||Date.now()).toLocaleTimeString();
+  if(d.services) renderServices(d.services);
+  if(d.usage) renderUsage(d.usage);
+  if(d.host) lastHost=d.host;
+  if(d.agents) agents=d.agents;
+  renderHosts();
+  renderInventory();
+}
+
+async function fetchSnapshot(){
+  const r=await fetch('/api/snapshot');
+  if(r.status===401) return unauthorized();
+  applySnapshot(await r.json());
+}
+
+function startPolling(){
+  if(pollTimer) return;
+  setLive(false,'polling');
+  pollTimer=setInterval(()=>{fetchSnapshot().catch(()=>{});},5000);
+}
+
+function stopPolling(){
+  if(pollTimer){clearInterval(pollTimer);pollTimer=null;}
+}
+
+function connectStream(){
+  if(es){try{es.close();}catch{}}
+  es=new EventSource('/api/stream');
+  es.addEventListener('snapshot',e=>{
+    stopPolling();
+    setLive(true,'live');
+    try{applySnapshot(JSON.parse(e.data));}catch{}
+  });
+  es.addEventListener('host',e=>{
+    setLive(true,'live');
+    try{
+      lastHost=JSON.parse(e.data);
+      renderHosts();
+      document.querySelector('#updated').textContent='Updated '+new Date().toLocaleTimeString();
+    }catch{}
+  });
+  es.addEventListener('agent',e=>{
+    try{
+      const p=JSON.parse(e.data);
+      agents[p.id]=p.agent;
+      renderHosts();
+      renderInventory();
+    }catch{}
+  });
+  es.addEventListener('probes',e=>{
+    try{
+      const p=JSON.parse(e.data);
+      renderServices(p.services);
+      document.querySelector('#updated').textContent='Updated '+new Date().toLocaleTimeString();
+    }catch{}
+  });
+  es.addEventListener('usage',e=>{
+    try{
+      const p=JSON.parse(e.data);
+      renderUsage(p.usage);
+      document.querySelector('#updated').textContent='Updated '+new Date().toLocaleTimeString();
+    }catch{}
+  });
+  es.onerror=()=>{
+    setLive(false,'reconnecting');
+    try{es.close();}catch{}
+    es=null;
+    startPolling();
+    setTimeout(connectStream,3000);
+  };
+}
+
+function setTabCount(id,up,total,forceBad){
+  const el=document.getElementById('count-'+id);
+  if(!el||!total) return;
+  el.textContent=`${up}/${total}`;
+  el.classList.toggle('bad',up<total||!!forceBad);
+}
+
+const TABS=['servers','services','containers','usage'];
+function showTab(){
+  const hash=location.hash.slice(1);
+  const active=TABS.includes(hash)?hash:TABS[0];
+  document.querySelectorAll('.panel[data-tab]').forEach(el=>el.classList.toggle('active',el.dataset.tab===active));
+  document.querySelectorAll('[data-tab-link]').forEach(el=>{
+    if(el.dataset.tabLink===active) el.setAttribute('aria-current','page');
+    else el.removeAttribute('aria-current');
+  });
+  hideTip();
+}
+window.addEventListener('hashchange',showTab);
+showTab();
+
+fetchSnapshot().then(connectStream).catch(e=>{
+  document.body.innerHTML='<main><p class="error">Dashboard error: '+esc(e.message)+'</p></main>';
+});
+</script></body></html>

@@ -1,0 +1,16 @@
+[Unit]
+Description=Read-only host stats for ops.chinmoy.site
+After=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+ExecStart=/usr/bin/python3 -I %h/opt/stats-agent/stats_agent.py
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=STATS_BIND=127.0.0.1 STATS_PORT=8789
+Restart=always
+RestartSec=10
+MemoryMax=256M
+CPUQuota=25%
+
+[Install]
+WantedBy=default.target

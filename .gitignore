@@ -1,0 +1,8 @@
+# secrets: never commit
+auth.json
+*.token
+.env
+# local backups from in-place edits (history lives in git now)
+*.bak.*
+node_modules/
+__pycache__/

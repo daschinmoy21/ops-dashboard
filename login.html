@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Hermes Ops · Sign in</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"><style>
+:root{color-scheme:dark;--line:#232327;--text:#ededef;--muted:#8d8d94;--bad:#ef6b6b;--accent:#e4e4e7}*{box-sizing:border-box}body{margin:0;background:#0a0a0b;font:13px/1.5 Inter,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--text);display:flex;align-items:center;justify-content:center;min-height:100vh;-webkit-font-smoothing:antialiased}.card{background:#101012;border:1px solid var(--line);border-radius:10px;padding:24px;width:min(92vw,340px)}.logo{width:20px;height:20px;border-radius:5px;background:var(--accent);margin-bottom:14px}h1{font-size:16px;font-weight:600;margin:0 0 2px}.sub{color:var(--muted);margin:0 0 18px}input[type=text],input[type=password]{width:100%;padding:8px 10px;background:#151518;border:1px solid var(--line);border-radius:6px;color:var(--text);font:inherit;outline:none}input:focus{border-color:#5f5f66}button{width:100%;margin-top:12px;padding:8px;border:none;border-radius:6px;background:var(--accent);color:#0a0a0b;font:500 13px Inter,sans-serif;cursor:pointer}button:hover{background:#fff}button:disabled{opacity:.55;cursor:wait}.err{color:var(--bad);font-size:12px;margin-top:10px;min-height:18px}
+</style></head><body><div class="card"><div class="logo"></div><h1>Sign in to Ops</h1><p class="sub">ops.chinmoy.site — private server dashboard</p>
+<form id="f"><input type="text" id="user" placeholder="Username" autocomplete="username" value="crimxnhaze"><input type="password" id="pw" placeholder="Password" autocomplete="current-password" style="margin-top:12px"><button type="submit" id="go">Sign in</button></form>
+<div class="err" id="err"></div></div>
+<script>
+const f=document.getElementById('f'),pw=document.getElementById('pw'),user=document.getElementById('user'),err=document.getElementById('err'),go=document.getElementById('go');
+f.onsubmit=async e=>{e.preventDefault();err.textContent='';go.disabled=true;
+try{const r=await fetch('/api/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({username:user.value.trim(),password:pw.value})});
+if(r.ok){location.reload();return;}
+const j=await r.json().catch(()=>({}));err.textContent=j.error||('Failed ('+r.status+')');}
+catch(_){err.textContent='Network error';}
+go.disabled=false;pw.focus();pw.select();};
+</script></body></html>

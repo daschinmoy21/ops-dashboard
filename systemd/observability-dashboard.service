@@ -1,0 +1,18 @@
+[Unit]
+Description=Observability dashboard (ops.chinmoy.site, port 8788)
+After=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+WorkingDirectory=/home/crimxnhaze/stack/observability-dashboard
+ExecStart=/home/crimxnhaze/opt/node/bin/node /home/crimxnhaze/stack/observability-dashboard/server.mjs
+Restart=on-failure
+RestartSec=3
+Environment=PORT=8788
+Environment=HOST=10.89.0.1
+Environment=PATH=/home/crimxnhaze/opt/node/bin:/usr/local/bin:/usr/bin:/bin
+Environment=CCUSAGE_BIN=/home/crimxnhaze/opt/node/bin/ccusage
+Environment=PODMAN_BIN=/usr/bin/podman
+
+[Install]
+WantedBy=default.target
